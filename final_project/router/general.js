@@ -30,18 +30,7 @@ async function fetchBookByISBNData(isbn) { /* ... from previous ... */
     });
 }
 
-// New mock asynchronous function to fetch books by author (can be used with async/await)
-async function fetchBooksByAuthorData(authorName) {
-    // If using a real API with axios:
-    // try {
-    //     const response = await axios.get(`http://some-external-api.com/books?author=${encodeURIComponent(authorName)}`);
-    //     return response.data; // Assuming API returns an array of books
-    // } catch (error) {
-    //     console.error(`Error fetching books by author ${authorName} from external API:`, error);
-    //     throw error; 
-    // }
-
-    // For our local simulation:
+async function fetchBooksByAuthorData(authorName) { /* ... from previous ... */
     return new Promise((resolve, reject) => {
         setTimeout(() => {
             const bookISBNs = Object.keys(books);
@@ -51,11 +40,41 @@ async function fetchBooksByAuthorData(authorName) {
                     booksByAuthor.push({ isbn: isbn, ...books[isbn] });
                 }
             });
-
             if (booksByAuthor.length > 0) {
                 resolve(booksByAuthor);
             } else {
-                reject(new Error("No books found by author: " + authorName + " in simulation")); // Reject with an Error object
+                reject(new Error("No books found by author: " + authorName + " in simulation"));
+            }
+        }, 100);
+    });
+}
+
+// New mock asynchronous function to fetch books by title (can be used with async/await)
+async function fetchBooksByTitleData(titleQuery) {
+    // If using a real API with axios:
+    // try {
+    //     const response = await axios.get(`http://some-external-api.com/books?title_contains=${encodeURIComponent(titleQuery)}`);
+    //     return response.data; // Assuming API returns an array of books
+    // } catch (error) {
+    //     console.error(`Error fetching books with title "${titleQuery}" from external API:`, error);
+    //     throw error; 
+    // }
+
+    // For our local simulation:
+    return new Promise((resolve, reject) => {
+        setTimeout(() => {
+            const bookISBNs = Object.keys(books);
+            let booksByTitle = [];
+            bookISBNs.forEach(isbn => {
+                if (books[isbn] && books[isbn].title && books[isbn].title.toLowerCase().includes(titleQuery.toLowerCase())) {
+                    booksByTitle.push({ isbn: isbn, ...books[isbn] });
+                }
+            });
+
+            if (booksByTitle.length > 0) {
+                resolve(booksByTitle);
+            } else {
+                reject(new Error("No books found with title containing: " + titleQuery + " in simulation"));
             }
         }, 100);
     });
@@ -101,11 +120,10 @@ public_users.get('/isbn/:isbn', async function (req, res) { /* ... using fetchBo
     }
 });
   
-// Get book details based on author - USING ASYNC/AWAIT
-public_users.get('/author/:author', async function (req, res) { // Note 'async'
+public_users.get('/author/:author', async function (req, res) { /* ... using fetchBooksByAuthorData() ... */
     const authorName = req.params.author;
     try {
-        const authorBooksData = await fetchBooksByAuthorData(authorName); // 'await' the promise
+        const authorBooksData = await fetchBooksByAuthorData(authorName);
         res.status(200).json({ booksbyauthor: authorBooksData });
     } catch (error) {
         console.error(`Error fetching books by author ${authorName} with async/await:`, error);
@@ -117,25 +135,24 @@ public_users.get('/author/:author', async function (req, res) { // Note 'async'
     }
 });
 
-// ... (rest of your routes: /title/:title, /review/:isbn) ...
-// Get all books based on title
-public_users.get('/title/:title',function (req, res) {
+// Get all books based on title - USING ASYNC/AWAIT
+public_users.get('/title/:title', async function (req, res) { // Note 'async'
     const requestedTitle = req.params.title;
-    const bookISBNs = Object.keys(books);
-    let booksByTitle = [];
-    bookISBNs.forEach(isbn => {
-        if (books[isbn].title.toLowerCase().includes(requestedTitle.toLowerCase())) {
-        booksByTitle.push({isbn: isbn, ...books[isbn]});
+    try {
+        const titleBooksData = await fetchBooksByTitleData(requestedTitle); // 'await' the promise
+        res.status(200).json({ booksbytitle: titleBooksData });
+    } catch (error) {
+        console.error(`Error fetching books with title "${requestedTitle}" using async/await:`, error);
+        if (error.message && error.message.includes("No books found")) {
+            res.status(404).json({ message: error.message });
+        } else {
+            res.status(500).json({ message: "Failed to retrieve books by title", error: error.message });
         }
-    });
-    if (booksByTitle.length > 0) {
-        return res.status(200).json({booksbytitle: booksByTitle});
-    } else {
-        return res.status(404).json({message: "No books found with title"});
     }
 });
+
 //  Get book review
-public_users.get('/review/:isbn',function (req, res) {
+public_users.get('/review/:isbn',function (req, res) { /* ... remains synchronous for now ... */
     const isbn_num = req.params.isbn;
     if (books[isbn_num] && books[isbn_num].reviews) {
         if(Object.keys(books[isbn_num].reviews).length > 0) {
