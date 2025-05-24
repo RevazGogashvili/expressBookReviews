@@ -1,131 +1,154 @@
 const express = require('express');
 let books = require("./booksdb.js");
-let isValid = require("./auth_users.js").isValid; // We'll use this if it's meant for username validation logic
-let users = require("./auth_users.js").users;   // This should be an array or object to store users
+let users = require("./auth_users.js").users;
+// const axios = require('axios'); // If using real axios
 const public_users = express.Router();
 
+// --- Mock Asynchronous Functions ---
+async function fetchBooksData() { /* ... from previous ... */
+    return new Promise((resolve, reject) => {
+        setTimeout(() => {
+            if (books) {
+                resolve(books);
+            } else {
+                reject("Book data not found in simulation");
+            }
+        }, 100);
+    });
+}
 
-public_users.post("/register", (req,res) => {
+async function fetchBookByISBNData(isbn) { /* ... from previous ... */
+    return new Promise((resolve, reject) => {
+        setTimeout(() => {
+            const book = books[isbn];
+            if (book) {
+                resolve(book);
+            } else {
+                reject(new Error("Book with ISBN " + isbn + " not found in simulation"));
+            }
+        }, 100);
+    });
+}
+
+// New mock asynchronous function to fetch books by author (can be used with async/await)
+async function fetchBooksByAuthorData(authorName) {
+    // If using a real API with axios:
+    // try {
+    //     const response = await axios.get(`http://some-external-api.com/books?author=${encodeURIComponent(authorName)}`);
+    //     return response.data; // Assuming API returns an array of books
+    // } catch (error) {
+    //     console.error(`Error fetching books by author ${authorName} from external API:`, error);
+    //     throw error; 
+    // }
+
+    // For our local simulation:
+    return new Promise((resolve, reject) => {
+        setTimeout(() => {
+            const bookISBNs = Object.keys(books);
+            let booksByAuthor = [];
+            bookISBNs.forEach(isbn => {
+                if (books[isbn] && books[isbn].author && books[isbn].author.toLowerCase() === authorName.toLowerCase()) {
+                    booksByAuthor.push({ isbn: isbn, ...books[isbn] });
+                }
+            });
+
+            if (booksByAuthor.length > 0) {
+                resolve(booksByAuthor);
+            } else {
+                reject(new Error("No books found by author: " + authorName + " in simulation")); // Reject with an Error object
+            }
+        }, 100);
+    });
+}
+
+// --- Routes ---
+public_users.post("/register", (req,res) => { /* ... from previous ... */
   const username = req.body.username;
   const password = req.body.password;
-
-  // Check if username and password are provided
   if (!username || !password) {
     return res.status(400).json({message: "Username and password are required."});
   }
-
-  // Option 1: If isValid is a function to check if username is valid (e.g., format, length)
-  // You might have a separate function for this. If not, you can remove this block.
-  // Assuming isValid checks general validity, not existence.
-  /*
-  if (isValid && !isValid(username)) { // Assuming isValid is a function you might have defined elsewhere
-      return res.status(400).json({message: "Invalid username format or characters."});
-  }
-  */
-
-  // Check if the username already exists
-  // This assumes 'users' is an array of user objects like: [{username: "user1", password: "pw1"}, ...]
-  // Or if 'users' is an object where keys are usernames: {"user1": {password: "pw1"}, ...}
-  
-  // Let's assume 'users' is an array of objects like: users = []
-  // And from auth_users.js, it's exported as: module.exports.users = users;
   const doesExist = users.find(user => user.username === username);
-
   if (doesExist) {
-    return res.status(409).json({message: "Username already exists. Please choose a different one."}); // 409 Conflict
+    return res.status(409).json({message: "Username already exists."});
   }
-
-  // If username doesn't exist and all checks pass, add the new user
-  // We should store the password securely in a real application (e.g., hashed)
-  // For this lab, we'll store it as is.
   users.push({"username":username, "password":password});
-  
-  return res.status(201).json({message: "User successfully registered. Now you can login."}); // 201 Created
+  return res.status(201).json({message: "User successfully registered. Now you can login."});
 });
 
-// Get the book list available in the shop
-public_users.get('/',function (req, res) {
-  if (books) {
-    res.status(200).send(JSON.stringify(books, null, 4));
-  } else {
-    res.status(404).json({message: "Book list not found"});
-  }
-});
-
-// Get book details based on ISBN
-public_users.get('/isbn/:isbn',function (req, res) {
-  const isbn = req.params.isbn;
-  const book = books[isbn];
-
-  if (book) {
-    return res.status(200).json(book);
-  } else {
-    return res.status(404).json({message: "Book with ISBN " + isbn + " not found"});
-  }
- });
-  
-// Get book details based on author
-public_users.get('/author/:author',function (req, res) {
-  const authorName = req.params.author;
-  const bookISBNs = Object.keys(books);
-  let booksByAuthor = [];
-
-  bookISBNs.forEach(isbn => {
-    if (books[isbn].author.toLowerCase() === authorName.toLowerCase()) {
-      booksByAuthor.push({
-        isbn: isbn,
-        author: books[isbn].author,
-        title: books[isbn].title,
-        reviews: books[isbn].reviews
-      });
+public_users.get('/', async function (req, res) { /* ... using fetchBooksData() ... */
+    try {
+        const booksData = await fetchBooksData();
+        res.status(200).send(JSON.stringify(booksData, null, 4));
+    } catch (error) {
+        console.error("Error fetching books with async/await:", error);
+        res.status(500).json({ message: "Failed to retrieve book list", error: error.message });
     }
-  });
-
-  if (booksByAuthor.length > 0) {
-    return res.status(200).json({booksbyauthor: booksByAuthor});
-  } else {
-    return res.status(404).json({message: "No books found by author: " + authorName});
-  }
 });
 
+public_users.get('/isbn/:isbn', async function (req, res) { /* ... using fetchBookByISBNData() ... */
+    const isbn = req.params.isbn;
+    try {
+        const bookData = await fetchBookByISBNData(isbn);
+        res.status(200).json(bookData);
+    } catch (error) {
+        console.error(`Error fetching book ${isbn} with async/await:`, error);
+        if (error.message && error.message.includes("not found")) {
+            res.status(404).json({ message: error.message });
+        } else {
+            res.status(500).json({ message: "Failed to retrieve book details", error: error.message });
+        }
+    }
+});
+  
+// Get book details based on author - USING ASYNC/AWAIT
+public_users.get('/author/:author', async function (req, res) { // Note 'async'
+    const authorName = req.params.author;
+    try {
+        const authorBooksData = await fetchBooksByAuthorData(authorName); // 'await' the promise
+        res.status(200).json({ booksbyauthor: authorBooksData });
+    } catch (error) {
+        console.error(`Error fetching books by author ${authorName} with async/await:`, error);
+        if (error.message && error.message.includes("No books found")) {
+            res.status(404).json({ message: error.message });
+        } else {
+            res.status(500).json({ message: "Failed to retrieve books by author", error: error.message });
+        }
+    }
+});
+
+// ... (rest of your routes: /title/:title, /review/:isbn) ...
 // Get all books based on title
 public_users.get('/title/:title',function (req, res) {
-  const requestedTitle = req.params.title;
-  const bookISBNs = Object.keys(books);
-  let booksByTitle = [];
-
-  bookISBNs.forEach(isbn => {
-    if (books[isbn].title.toLowerCase().includes(requestedTitle.toLowerCase())) {
-      booksByTitle.push({
-        isbn: isbn,
-        author: books[isbn].author,
-        title: books[isbn].title,
-        reviews: books[isbn].reviews
-      });
+    const requestedTitle = req.params.title;
+    const bookISBNs = Object.keys(books);
+    let booksByTitle = [];
+    bookISBNs.forEach(isbn => {
+        if (books[isbn].title.toLowerCase().includes(requestedTitle.toLowerCase())) {
+        booksByTitle.push({isbn: isbn, ...books[isbn]});
+        }
+    });
+    if (booksByTitle.length > 0) {
+        return res.status(200).json({booksbytitle: booksByTitle});
+    } else {
+        return res.status(404).json({message: "No books found with title"});
     }
-  });
-
-  if (booksByTitle.length > 0) {
-    return res.status(200).json({booksbytitle: booksByTitle});
-  } else {
-    return res.status(404).json({message: "No books found with title containing: " + requestedTitle});
-  }
 });
-
 //  Get book review
 public_users.get('/review/:isbn',function (req, res) {
-  const isbn = req.params.isbn;
-  const book = books[isbn];
-
-  if (book) {
-    if (book.reviews && Object.keys(book.reviews).length > 0) {
-      return res.status(200).json(book.reviews);
-    } else {
-      return res.status(200).json({message: "Book with ISBN " + isbn + " found, but it has no reviews yet."});
+    const isbn_num = req.params.isbn;
+    if (books[isbn_num] && books[isbn_num].reviews) {
+        if(Object.keys(books[isbn_num].reviews).length > 0) {
+            return res.status(200).json(books[isbn_num].reviews);
+        } else {
+            return res.status(200).json({message: "No reviews for this book yet."});
+        }
+    } else if (books[isbn_num]) {
+        return res.status(200).json({message: "No reviews property for this book."});
     }
-  } else {
-    return res.status(404).json({message: "Book with ISBN " + isbn + " not found. Cannot retrieve reviews."});
-  }
+    else {
+        return res.status(404).json({message: "Book not found"});
+    }
 });
 
 module.exports.general = public_users;
